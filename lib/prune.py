@@ -9,7 +9,13 @@ from numpy import mean
 
 from .ablate import AblateGPT
 import optuna
+import copy
 import json
+
+import os
+from llava.model.builder import load_pretrained_model
+from llava.utils import disable_torch_init
+from llava.mm_utils import tokenizer_image_token, get_model_name_from_path, KeywordsStoppingCriteria
 
 def find_layers(module, layers=[nn.Linear], name=''):
     """
@@ -224,7 +230,8 @@ def prune_op(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, p
         # Get input IDs
         testenc = testenc.input_ids
         # Calculate number of samples
-        nsamples = testenc.numel() // model.seqlen
+        # nsamples = testenc.numel() // model.seqlen
+        nsamples = 50
         # List to store negative log likelihoods
         nlls = []
         print(f"nsamples {nsamples}")
@@ -256,6 +263,11 @@ def prune_op(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, p
         return ppl.item()
     
     def assign_bin_to_layer(n, m):
+        '''
+        example: n=11, m=5
+        return [0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4]
+        To assign each layer to a bin. Assign the mod to the first bin
+        '''
         bin_size = n // m
         extra = n % m
         sequence = [i // (bin_size + 1) if i < bin_size * extra + extra else (i - extra) // bin_size for i in range(n)]
@@ -268,18 +280,36 @@ def prune_op(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, p
             #     name = str(i) + str('_') + j 
             #     out[name] = trial.suggest_float(name, args.sparsity_ratio - 0.1, args.sparsity_ratio + 0.1, step=0.025)
             name = str(i)
-            out[name] = trial.suggest_float(name, args.sparsity_ratio-0.1, args.sparsity_ratio+0.1, step=0.025) 
+            out[name] = trial.suggest_float(name, args.sparsity_ratio - 0.05, args.sparsity_ratio + 0.05, step=0.025)
         return out
+    
+    def get_llava(model_path):
+        disable_torch_init()
+        model_path = os.path.expanduser(model_path)
+        model_name = get_model_name_from_path(model_path)
+        tokenizer, model, image_processor, context_len = load_pretrained_model(model_path, None, model_name)
+        model.seqlen = model.config.max_position_embeddings
+        return model
     
     num_layer = len(model.model.layers)
     num_seg = 5
     bin_idx = assign_bin_to_layer(num_layer, num_seg)
-    # module_name = [n for n in find_layers(model.model.layers[0])]
+    del model, tokenizer
+    torch.cuda.empty_cache()
     
     def objective(trial):
         sparsity_params = init_optimize_sparsity(trial, num_seg)
+        trial_sparsity = mean([sparsity_params[str(i)] for i in bin_idx]) 
+        if trial_sparsity < args.sparsity_ratio or trial_sparsity >= args.sparsity_ratio + 0.05:
+            raise optuna.TrialPruned()
+        print(sparsity_params)
+        
+        model = get_llava(args.model)
+        model.eval()
+
         with torch.no_grad():
             inps, outs, attention_mask, position_ids = prepare_calibration_input(model, dataloader, device)
+        
         layers = model.model.layers
         for i in range(len(layers)):
             bin_no = bin_idx[i]
@@ -311,6 +341,7 @@ def prune_op(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, p
                 # print(f"pruning layer {i} name {name}")               
                 sparsity_name = str(bin_no)# + '_' + name
                 sparsity_ratio = sparsity_params[sparsity_name]
+                # sparsity_ratio = 0.5
                 print(f"pruning layer {i} name {name} at sparsity rate {sparsity_ratio}")
                 
                 # W_metric = torch.abs(subset[name].weight.data) * torch.sqrt(wrapped_layers[name].scaler_row.reshape((1,-1)))
@@ -360,27 +391,26 @@ def prune_op(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, p
             for j in range(args.nsamples):
                 with torch.no_grad():
                     outs[j] = layer(inps[j].unsqueeze(0), attention_mask=attention_mask, position_ids=position_ids)[0]
-            
             inps, outs = outs, inps
-    
+            torch.cuda.empty_cache() 
         print('prune finished')
         del inps, outs, attention_mask, position_ids
-        torch.cuda.empty_cache()
         total_sparsity_ratio = check_sparsity(model)
         print(f"sparsity sanity check {total_sparsity_ratio:.4f}")
         with torch.no_grad():
-            c4_ppl = eval_ppl(model, c4_testenc, bs=1, device=device)
-        if total_sparsity_ratio < args.sparsity_ratio:
-            c4_ppl *= (1 + abs(total_sparsity_ratio - args.sparsity_ratio) / args.sparsity_ratio)
+            c4_ppl = eval_ppl(model=model, testenc=c4_testenc, bs=1, device=device)
+        # if total_sparsity_ratio < args.sparsity_ratio:
+        #     c4_ppl *= (1 + abs(total_sparsity_ratio - args.sparsity_ratio) / args.sparsity_ratio)
         loss = c4_ppl
+        del model
+        torch.cuda.empty_cache()
         return loss
     
     study = optuna.create_study(direction='minimize')
-    study.optimize(objective, n_trials=30)
+    study.optimize(objective, n_trials=50)
     print(study.best_params)
     with open('/zhangte/nips/wanda/best_params.txt', 'w') as file:
         json.dump(study.best_params, file)
-    model.config.use_cache = use_cache
     quit()
     
 
