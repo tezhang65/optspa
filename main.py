@@ -7,6 +7,7 @@ from importlib.metadata import version
 
 from lib.prune import prune_wanda, prune_magnitude, prune_sparsegpt, prune_ablate, check_sparsity, find_layers, prune_op
 from lib.eval import eval_ppl, eval_zero_shot
+from lib.tool import *
 
 print('torch', version('torch'))
 print('transformers', version('transformers'))
@@ -25,20 +26,6 @@ def get_llm(model_name, cache_dir="llm_weights"):
     model.seqlen = model.config.max_position_embeddings 
     return model
 
-def get_llava(model_path):
-    from llava.model.builder import load_pretrained_model
-    from llava.utils import disable_torch_init
-    from llava.mm_utils import tokenizer_image_token, get_model_name_from_path, KeywordsStoppingCriteria
-    
-    disable_torch_init()
-    model_path = os.path.expanduser(model_path)
-    model_name = get_model_name_from_path(model_path)
-    tokenizer, model, image_processor, context_len = load_pretrained_model(model_path, None, model_name)
-    
-    model.seqlen = model.config.max_position_embeddings
-    print(model.seqlen)
-    return model, tokenizer
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', type=str, help='LLaMA model')
@@ -52,6 +39,7 @@ def main():
     parser.add_argument('--use_variant', action="store_true", help="whether to use the wanda variant described in the appendix")
     parser.add_argument('--save', type=str, default=None, help='Path to save results.')
     parser.add_argument('--save_model', type=str, default=None, help='Path to save the pruned model.')
+    parser.add_argument('--sparsity_allocation', type=str, default=None, help='Path of the optimized sparsity allocation')
 
     parser.add_argument("--eval_zero_shot", action="store_true")
     args = parser.parse_args()
@@ -68,10 +56,11 @@ def main():
 
     model_name = args.model.split("/")[-1]
     print(f"loading llm model {args.model}")
-    # model = get_llm(args.model, args.cache_dir)
-    # model.eval()
-    # tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=False)
-    model, tokenizer = get_llava(args.model)
+    if 'llava' in model_name:
+        model, tokenizer = get_llava(args.model)
+    else:
+        model = get_llm(args.model, args.cache_dir)
+        tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=False)
     model.eval()
     device = torch.device("cuda:0")
     if "30b" in args.model or "65b" in args.model: # for 30b and 65b we use device_map to load onto multiple A6000 GPUs, thus the processing here.
@@ -83,7 +72,7 @@ def main():
         if args.prune_method == "wanda":
             prune_wanda(args, model, tokenizer, device, prune_n=prune_n, prune_m=prune_m)
         elif args.prune_method == "optuna":
-            prune_op(args, model, tokenizer, device, prune_n=prune_n, prune_m=prune_m)
+            model = prune_op(args, model, tokenizer, device, prune_n=prune_n, prune_m=prune_m)
         elif args.prune_method == "magnitude":
             prune_magnitude(args, model, tokenizer, device, prune_n=prune_n, prune_m=prune_m)
         elif args.prune_method == "sparsegpt":

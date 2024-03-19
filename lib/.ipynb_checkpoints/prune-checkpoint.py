@@ -221,7 +221,7 @@ def prune_wanda(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0
     torch.cuda.empty_cache()
 
 
-def prune_op(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, prune_m=0, num_seg=8, n_trials=200, metric='ria', num_val=50, save_result=True):
+def prune_op(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, prune_m=0, num_seg=5, n_trials=50, metric='ria', num_val=50, save_result=False):
     use_cache = model.config.use_cache 
     model.config.use_cache = False 
     print("loading calibdation data")
@@ -230,19 +230,12 @@ def prune_op(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, p
     num_layer = len(model.model.layers) 
     bin_idx = assign_bin_to_layer(num_layer, num_seg)
     
-    def init_optimize_sparsity(trial, num_seg, target_sparsity):
-        out = {}
-        for i in range(num_seg):
-            name = str(i)
-            out[name] = trial.suggest_float(name, target_sparsity - 0.05, target_sparsity + 0.05, step=0.025)
-        return out 
-    
     def objective(trial):
         # initialize the trial sparsity allocation
-        sparsity_params = init_optimize_sparsity(trial, num_seg, args.sparsity_ratio) 
+        sparsity_params = init_optimize_sparsity(trial, num_seg, args.sparsity) 
         trial_sparsity = mean([sparsity_params[str(i)] for i in bin_idx]) 
         # prune out unneccessay trials
-        if trial_sparsity < args.sparsity_ratio-0.01 or trial_sparsity >= args.sparsity_ratio + 0.05:
+        if trial_sparsity < args.sparsity_ratio or trial_sparsity >= args.sparsity_ratio + 0.05:
             raise optuna.TrialPruned()
         # reload the model
         model_name = args.model.split("/")[-1]
@@ -341,8 +334,6 @@ def prune_op(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, p
         with torch.no_grad():
             loss = eval_ppl_c4(model, c4_testenc, num_val, bs=1, device=device)
             print(sparsity_params, loss)
-        with open('./sparsity_log.txt', 'a') as file:
-            file.write(f"sparsity_dict: {sparsity_params}, total_sparsity:{trial_sparsity}, loss: {loss}\n")
         # free the space for the next trial
         del model, inps, outs, attention_mask, position_ids
         torch.cuda.empty_cache()
@@ -358,11 +349,11 @@ def prune_op(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, p
         study.optimize(objective, n_trials=n_trials)
         
         if save_result:# save the outcome sparsity
-            with open(f'./sparsity/model_{args.model.split("/")[-1]}_layer_{num_layer}_seg_{num_seg}_target_{args.sparsity_ratio}_ntrials_{n_trials}.json', 'w') as file:
+            with open(f'./sparsity/model{args.model.split("/")[-1]}_layer{num_layer}_seg{num_seg}_target{args.sparsity_ratio}.json', 'w') as file:
                 json.dump(study.best_params, file)
         sparsity_params = study.best_params
         
-        # reload the original model back       
+        # reload the original model back
         model_name = args.model.split("/")[-1]
         if 'llava' in model_name:
             model = get_llava(args.model)[0]
@@ -456,10 +447,10 @@ def prune_op(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, p
         for j in range(args.nsamples):
             with torch.no_grad():
                 outs[j] = layer(inps[j].unsqueeze(0), attention_mask=attention_mask, position_ids=position_ids)[0]
-        inps, outs = outs, inps 
+        inps, outs = outs, inps
+
     model.config.use_cache = use_cache 
-    torch.cuda.empty_cache()
-    return model        
+    torch.cuda.empty_cache()         
 
 @torch.no_grad()
 def prune_sparsegpt(args, model, tokenizer, dev, prune_n=0, prune_m=0):
