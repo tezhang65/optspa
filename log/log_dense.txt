@@ -1,0 +1,10 @@
+method	actual_sparsity	ppl_test
+dense	0.5010	14.3016
+method	actual_sparsity	ppl_test
+dense	0.0000	5.6072
+method	actual_sparsity	ppl_test
+dense	0.5000	6.8811
+method	actual_sparsity	ppl_test
+dense	0.0000	5.6136
+method	actual_sparsity	ppl_test
+dense	0.5000	6.8710

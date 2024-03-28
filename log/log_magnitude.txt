@@ -1,0 +1,4 @@
+method	actual_sparsity	ppl_test
+magnitude	0.5010	7.6517
+method	actual_sparsity	ppl_test
+magnitude	0.5010	7.6595

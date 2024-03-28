@@ -5,7 +5,7 @@ import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from importlib.metadata import version
 
-from lib.prune import prune_wanda, prune_magnitude, prune_sparsegpt, prune_ablate, check_sparsity, find_layers, prune_op
+from lib.prune import prune_wanda, prune_magnitude, prune_sparsegpt, prune_ablate, check_sparsity, find_layers, prune_optspa
 from lib.eval import eval_ppl, eval_zero_shot
 from lib.tool import *
 
@@ -33,7 +33,7 @@ def main():
     parser.add_argument('--nsamples', type=int, default=128, help='Number of calibration samples.')
     parser.add_argument('--sparsity_ratio', type=float, default=0, help='Sparsity level')
     parser.add_argument("--sparsity_type", type=str, choices=["unstructured", "4:8", "2:4"])
-    parser.add_argument("--prune_method", type=str, choices=["magnitude", "wanda", "sparsegpt",'optuna', 
+    parser.add_argument("--prune_method", type=str, choices=["magnitude", "wanda", "sparsegpt",'optspa', 'dense',
                         "ablate_mag_seq", "ablate_wanda_seq", "ablate_mag_iter", "ablate_wanda_iter", "search"])
     parser.add_argument("--cache_dir", default="llm_weights", type=str )
     parser.add_argument('--use_variant', action="store_true", help="whether to use the wanda variant described in the appendix")
@@ -58,6 +58,8 @@ def main():
     print(f"loading llm model {args.model}")
     if 'llava' in model_name:
         model, tokenizer = get_llava(args.model)
+    elif 'qwen' in model_name:
+        pass 
     else:
         model = get_llm(args.model, args.cache_dir)
         tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=False)
@@ -71,12 +73,14 @@ def main():
         print("pruning starts")
         if args.prune_method == "wanda":
             prune_wanda(args, model, tokenizer, device, prune_n=prune_n, prune_m=prune_m)
-        elif args.prune_method == "optuna":
-            model = prune_op(args, model, tokenizer, device, prune_n=prune_n, prune_m=prune_m)
+        elif args.prune_method == "optspa":
+            model = prune_optspa(args, model, tokenizer, device, prune_n=prune_n, prune_m=prune_m)
         elif args.prune_method == "magnitude":
             prune_magnitude(args, model, tokenizer, device, prune_n=prune_n, prune_m=prune_m)
         elif args.prune_method == "sparsegpt":
             prune_sparsegpt(args, model, tokenizer, device, prune_n=prune_n, prune_m=prune_m)
+        elif args.prune_method == "dense":
+            pass
         elif "ablate" in args.prune_method:
             prune_ablate(args, model, tokenizer, device, prune_n=prune_n, prune_m=prune_m)
 
@@ -86,13 +90,17 @@ def main():
     print(f"sparsity sanity check {sparsity_ratio:.4f}")
     print("*"*30)
     ################################################################
+    if args.save_model:
+        model.save_pretrained(args.save_model)
+        tokenizer.save_pretrained(args.save_model)
+        
     ppl_test = eval_ppl(args, model, tokenizer, device)
     print(f"wikitext perplexity {ppl_test}")
 
     if not os.path.exists(args.save):
         os.makedirs(args.save)
     save_filepath = os.path.join(args.save, f"log_{args.prune_method}.txt")
-    with open(save_filepath, "w") as f:
+    with open(save_filepath, "a") as f:
         print("method\tactual_sparsity\tppl_test", file=f, flush=True)
         print(f"{args.prune_method}\t{sparsity_ratio:.4f}\t{ppl_test:.4f}", file=f, flush=True)
 
@@ -107,10 +115,6 @@ def main():
         print("********************************")
         print("zero_shot evaluation results")
         print(results)
-
-    if args.save_model:
-        model.save_pretrained(args.save_model)
-        tokenizer.save_pretrained(args.save_model)
 
 if __name__ == '__main__':
     main()

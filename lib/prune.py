@@ -64,7 +64,7 @@ def check_sparsity(model):
         print(f"layer {i} sparsity {float(sub_count)/sub_params:.6f}")
 
     model.config.use_cache = use_cache 
-    return float(count)/total_params 
+    return round(float(count)/total_params, 3)
 
 def prepare_calibration_input(model, dataloader, device):
     use_cache = model.config.use_cache
@@ -112,6 +112,11 @@ def return_given_alpha(alpha, sort_res, W_metric, tmp_metric, sum_before):
     W_mask = (W_metric <= thres)
     cur_sparsity = (W_mask==True).sum() / W_mask.numel()
     return W_mask, cur_sparsity
+
+def weighted_sum_ratio(W):
+    row_norms = torch.sqrt((W**2).sum(dim=1, keepdim=True))
+    col_norms = torch.sqrt((W**2).sum(dim=0, keepdim=True))
+    return W / row_norms + W / col_norms
 
 def prune_magnitude(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, prune_m=0):
     layers = model.model.layers 
@@ -219,9 +224,10 @@ def prune_wanda(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0
 
     model.config.use_cache = use_cache 
     torch.cuda.empty_cache()
+    return model
 
 
-def prune_op(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, prune_m=0, num_block=8, fine_search=True, n_trials=200, metric='ria', num_val=64, save_op_profile=True, save_log=True):
+def prune_optspa(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, prune_m=0, num_block=8, fine_search=True, n_trials=200, metric='ria', num_val=64, save_op_profile=True, save_log=True):
     use_cache = model.config.use_cache 
     model.config.use_cache = False 
     print("loading calibdation data")
@@ -266,7 +272,7 @@ def prune_op(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, p
         else:
             trial_sparsity = mean([sparsity_params[str(i)] for i in bin_idx]) 
         # prune out unneccessay trials
-        if trial_sparsity < args.sparsity_ratio-0.005:
+        if trial_sparsity < args.sparsity_ratio-0.01:
             raise optuna.TrialPruned()
         
         # reload the model
@@ -317,10 +323,13 @@ def prune_op(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, p
                     RI = (absolute / torch.sum(absolute, dim=0)) + (absolute / torch.sum(absolute, dim=1, keepdim=True))
                     W_metric = RI * torch.pow(torch.sqrt(wrapped_layers[name].scaler_row.reshape((1,-1))), 0.5)
                     del absolute, RI
-                #elif metric == 'new':
-                else:
+                elif metric =='wanda':
                     W_metric = torch.abs(subset[name].weight.data) * torch.sqrt(wrapped_layers[name].scaler_row.reshape((1,-1)))
-                
+                else:
+                    W_abs = torch.abs(subset[name].weight.data)
+                    log_norm = torch.log1p(weighted_sum_ratio(W_abs))
+                    W_metric = log_norm * torch.pow(wrapped_layers[name].scaler_row.reshape((1,-1)), 0.25)
+                    del W_abs, log_norm    
                 W_mask = (torch.zeros_like(W_metric) == 1)  ## initialize a mask to be all False
                 if prune_n != 0:
                     # structured n:m sparsity
@@ -370,8 +379,8 @@ def prune_op(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, p
             loss = eval_ppl_c4(model, c4_testenc, num_val, bs=1, device=device)
             print(sparsity_params, trial_sparsity, loss)
         if save_log:
-            with open('./sparsity_log_1.txt', 'a') as file:
-                file.write(f"sparsity_dict: {sparsity_params}, total_sparsity:{trial_sparsity}, loss: {loss}\n")
+            with open(f'./sparsity_opt_log/{model_name}.txt', 'a') as file:
+                file.write(f"sparsity_dict: {sparsity_params},total_sparsity:{trial_sparsity},loss: {loss}\n")
         # free the space for the next trial
         del model, inps, outs, attention_mask, position_ids
         torch.cuda.empty_cache()
@@ -387,7 +396,7 @@ def prune_op(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, p
         study.optimize(objective, n_trials=n_trials)
         
         if save_op_profile:# save the outcome sparsity
-            with open(f'./sparsity_profile/model_{args.model.split("/")[-1]}_layer_{num_layer}_seg_{num_seg}_fine{fine_search}_target_{args.sparsity_ratio}_ntrials_{n_trials}.json', 'w') as file:
+            with open(f'./sparsity_profile/model_{args.model.split("/")[-1]}_ntrials_{n_trials}.json', 'w') as file:
                 json.dump(study.best_params, file)
         sparsity_params = study.best_params
         
@@ -402,6 +411,7 @@ def prune_op(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, p
         # load the optimized sparsity allocation if provided
         with open(args.sparsity_allocation, 'r') as file:
             sparsity_params = json.load(file)
+        # sparsity_params = {'0-self_attn.q_proj': 0.45, '0-self_attn.k_proj': 0.47500000000000003, '0-self_attn.v_proj': 0.45, '0-self_attn.o_proj': 0.525, '0-mlp.gate_proj': 0.55, '0-mlp.down_proj': 0.5, '0-mlp.up_proj': 0.5, '1-self_attn.q_proj': 0.525, '1-self_attn.k_proj': 0.5, '1-self_attn.v_proj': 0.45, '1-self_attn.o_proj': 0.45, '1-mlp.gate_proj': 0.5, '1-mlp.down_proj': 0.45, '1-mlp.up_proj': 0.47500000000000003, '2-self_attn.q_proj': 0.55, '2-self_attn.k_proj': 0.47500000000000003, '2-self_attn.v_proj': 0.55, '2-self_attn.o_proj': 0.5, '2-mlp.gate_proj': 0.47500000000000003, '2-mlp.down_proj': 0.45, '2-mlp.up_proj': 0.47500000000000003, '3-self_attn.q_proj': 0.55, '3-self_attn.k_proj': 0.5, '3-self_attn.v_proj': 0.5, '3-self_attn.o_proj': 0.525, '3-mlp.gate_proj': 0.55, '3-mlp.down_proj': 0.45, '3-mlp.up_proj': 0.5, '4-self_attn.q_proj': 0.55, '4-self_attn.k_proj': 0.525, '4-self_attn.v_proj': 0.45, '4-self_attn.o_proj': 0.55, '4-mlp.gate_proj': 0.525, '4-mlp.down_proj': 0.5, '4-mlp.up_proj': 0.45, '5-self_attn.q_proj': 0.55, '5-self_attn.k_proj': 0.55, '5-self_attn.v_proj': 0.55, '5-self_attn.o_proj': 0.55, '5-mlp.gate_proj': 0.55, '5-mlp.down_proj': 0.47500000000000003, '5-mlp.up_proj': 0.525, '6-self_attn.q_proj': 0.45, '6-self_attn.k_proj': 0.45, '6-self_attn.v_proj': 0.55, '6-self_attn.o_proj': 0.47500000000000003, '6-mlp.gate_proj': 0.5, '6-mlp.down_proj': 0.525, '6-mlp.up_proj': 0.45, '7-self_attn.q_proj': 0.47500000000000003, '7-self_attn.k_proj': 0.5, '7-self_attn.v_proj': 0.55, '7-self_attn.o_proj': 0.5, '7-mlp.gate_proj': 0.45, '7-mlp.down_proj': 0.47500000000000003, '7-mlp.up_proj': 0.45}
     print(sparsity_params)
     # prune with the optimized sparsity allocation
     with torch.no_grad():
@@ -438,16 +448,21 @@ def prune_op(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, p
             sparsity_name = str(bin_no)
             if fine_search:
                 sparsity_name = str(bin_no) + '-' + name
-            sparsity_ratio = sparsity_params[sparsity_name]
+            sparsity_ratio = round(sparsity_params[sparsity_name], 4)
+            # sparsity_ratio = 0.5
             print(f"pruning layer {i} name {name} at sparsity rate {sparsity_ratio}")
             if metric == 'ria':
                 absolute = torch.abs(subset[name].weight.data)
                 RI = (absolute / torch.sum(absolute, dim=0)) + (absolute / torch.sum(absolute, dim=1, keepdim=True))
                 W_metric = RI * torch.pow(torch.sqrt(wrapped_layers[name].scaler_row.reshape((1,-1))), 0.5)
                 del absolute, RI
-            else:
+            elif metric == 'wanda':
                 W_metric = torch.abs(subset[name].weight.data) * torch.sqrt(wrapped_layers[name].scaler_row.reshape((1,-1)))
-
+            else:
+                W_abs = torch.abs(subset[name].weight.data)
+                log_norm = torch.log1p(weighted_sum_ratio(W_abs))
+                W_metric = log_norm * torch.pow(wrapped_layers[name].scaler_row.reshape((1,-1)), 0.25)
+                del W_abs, log_norm
             W_mask = (torch.zeros_like(W_metric) == 1)  ## initialize a mask to be all False
             if prune_n != 0:
                 # structured n:m sparsity
