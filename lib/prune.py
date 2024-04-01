@@ -6,6 +6,7 @@ from .sparsegpt import SparseGPT
 from .layerwrapper import WrappedGPT
 from .data import get_loaders
 from numpy import mean
+from transformers import AutoTokenizer, AutoModelForCausalLM
 
 from .ablate import AblateGPT
 import optuna
@@ -18,6 +19,8 @@ from llava.utils import disable_torch_init
 from llava.mm_utils import tokenizer_image_token, get_model_name_from_path, KeywordsStoppingCriteria
 from .eval import eval_ppl_c4
 from .tool import *
+
+qwen = False
 
 def find_layers(module, layers=[nn.Linear], name=''):
     """
@@ -44,7 +47,7 @@ def check_sparsity(model):
     use_cache = model.config.use_cache 
     model.config.use_cache = False 
 
-    layers = model.model.layers
+    layers = model.transformer.h if qwen else model.model.layers  
     count = 0 
     total_params = 0
     for i in range(len(layers)):
@@ -66,10 +69,22 @@ def check_sparsity(model):
     model.config.use_cache = use_cache 
     return round(float(count)/total_params, 3)
 
+def get_llm(model_name, cache_dir="llm_weights"):
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name, 
+        torch_dtype=torch.float16, 
+        cache_dir=cache_dir, 
+        low_cpu_mem_usage=True, 
+        device_map="auto",
+        trust_remote_code=True, 
+    )
+    model.seqlen = model.config.max_position_embeddings 
+    return model
+
 def prepare_calibration_input(model, dataloader, device):
     use_cache = model.config.use_cache
     model.config.use_cache = False
-    layers = model.model.layers
+    layers = model.transformer.h if qwen else model.model.layers
 
     # dev = model.hf_device_map["model.embed_tokens"]
     if "model.embed_tokens" in model.hf_device_map:
@@ -119,7 +134,7 @@ def weighted_sum_ratio(W):
     return W / row_norms + W / col_norms
 
 def prune_magnitude(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, prune_m=0):
-    layers = model.model.layers 
+    layers = model.transformer.h if qwen else model.model.layers
 
     for i in range(len(layers)):
         layer = layers[i]
@@ -150,7 +165,7 @@ def prune_wanda(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0
     with torch.no_grad():
         inps, outs, attention_mask, position_ids = prepare_calibration_input(model, dataloader, device)
 
-    layers = model.model.layers
+    layers = model.transformer.h if qwen else model.model.layers
     for i in range(len(layers)):
         layer = layers[i]
         subset = find_layers(layer)
@@ -227,17 +242,17 @@ def prune_wanda(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0
     return model
 
 
-def prune_optspa(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, prune_m=0, num_block=8, fine_search=True, n_trials=200, metric='ria', num_val=64, save_op_profile=True, save_log=True):
+def prune_optspa(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, prune_m=0, num_block=8, fine_search=True, n_trials=100, metric='lognorm', num_val=64, save_op_profile=True, save_log=True):
     use_cache = model.config.use_cache 
     model.config.use_cache = False 
     print("loading calibdation data")
     dataloader, c4_testenc = get_loaders("c4",nsamples=args.nsamples,seed=args.seed,seqlen=model.seqlen,tokenizer=tokenizer)
     print("dataset loading complete")
-    num_layer = len(model.model.layers) 
+    num_layer = len(model.transformer.h) if qwen else len(model.model.layers)
     bin_idx = assign_bin_to_layer(num_layer, num_block)
     
     if fine_search:
-        params_count = find_layers(model.model.layers[0])
+        params_count = find_layers(model.transformer.h[0] if qwen else model.model.layers[0])
         total_params = 0
         for name in params_count:
             params_count[name] = params_count[name].weight.data.numel()
@@ -272,7 +287,7 @@ def prune_optspa(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=
         else:
             trial_sparsity = mean([sparsity_params[str(i)] for i in bin_idx]) 
         # prune out unneccessay trials
-        if trial_sparsity < args.sparsity_ratio-0.01:
+        if trial_sparsity < args.sparsity_ratio:
             raise optuna.TrialPruned()
         
         # reload the model
@@ -285,7 +300,7 @@ def prune_optspa(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=
 
         with torch.no_grad():
             inps, outs, attention_mask, position_ids = prepare_calibration_input(model, dataloader, device)
-        layers = model.model.layers
+        layers = model.transformer.h if qwen else model.model.layers
         for i in range(len(layers)):
             bin_no = bin_idx[i]
             layer = layers[i]
@@ -318,52 +333,18 @@ def prune_optspa(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=
                     sparsity_name = str(bin_no) + '-' + name
                 sparsity_ratio = round(sparsity_params[sparsity_name], 4)
                 print(f"pruning layer {i} name {name} at sparsity rate {sparsity_ratio}")
-                if metric == 'ria':
-                    absolute = torch.abs(subset[name].weight.data)
-                    RI = (absolute / torch.sum(absolute, dim=0)) + (absolute / torch.sum(absolute, dim=1, keepdim=True))
-                    W_metric = RI * torch.pow(torch.sqrt(wrapped_layers[name].scaler_row.reshape((1,-1))), 0.5)
-                    del absolute, RI
-                elif metric =='wanda':
+                if metric =='wanda':
                     W_metric = torch.abs(subset[name].weight.data) * torch.sqrt(wrapped_layers[name].scaler_row.reshape((1,-1)))
                 else:
                     W_abs = torch.abs(subset[name].weight.data)
                     log_norm = torch.log1p(weighted_sum_ratio(W_abs))
                     W_metric = log_norm * torch.pow(wrapped_layers[name].scaler_row.reshape((1,-1)), 0.25)
                     del W_abs, log_norm    
-                W_mask = (torch.zeros_like(W_metric) == 1)  ## initialize a mask to be all False
-                if prune_n != 0:
-                    # structured n:m sparsity
-                    for ii in range(W_metric.shape[1]):
-                        if ii % prune_m == 0:
-                            tmp = W_metric[:,ii:(ii+prune_m)].float()
-                            W_mask.scatter_(1,ii+torch.topk(tmp, prune_n,dim=1, largest=False)[1], True)
-                else:
-                    sort_res = torch.sort(W_metric, dim=-1, stable=True)
-
-                    if args.use_variant:
-                        # wanda variant 
-                        tmp_metric = torch.cumsum(sort_res[0], dim=1)
-                        sum_before = W_metric.sum(dim=1)
-
-                        alpha = 0.4
-                        alpha_hist = [0., 0.8]
-                        W_mask, cur_sparsity = return_given_alpha(alpha, sort_res, W_metric, tmp_metric, sum_before)
-                        while (torch.abs(cur_sparsity - args.sparsity_ratio)>0.001) and (alpha_hist[1]-alpha_hist[0]>=0.001):
-                            if cur_sparsity > args.sparsity_ratio:
-                                alpha_new = (alpha + alpha_hist[0]) / 2.0
-                                alpha_hist[1] = alpha
-                            else:
-                                alpha_new = (alpha + alpha_hist[1]) / 2.0
-                                alpha_hist[0] = alpha
-
-                            alpha = alpha_new 
-                            W_mask, cur_sparsity = return_given_alpha(alpha, sort_res, W_metric, tmp_metric, sum_before)
-                        print(f"alpha found {alpha} sparsity {cur_sparsity:.6f}")
-                    else:
-                        # unstructured pruning
-                        indices = sort_res[1][:,:int(W_metric.shape[1] * sparsity_ratio)]
-                        W_mask.scatter_(1, indices, True)
-
+                W_mask = (torch.zeros_like(W_metric) == 1)  ## initialize a mask to be all False        
+                sort_res = torch.sort(W_metric, dim=-1, stable=True)
+                # unstructured pruning
+                indices = sort_res[1][:,:int(W_metric.shape[1] * sparsity_ratio)]
+                W_mask.scatter_(1, indices, True)
                 subset[name].weight.data[W_mask] = 0  ## set weights to zero
                 del W_mask, W_metric
 
@@ -373,50 +354,49 @@ def prune_optspa(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=
             inps, outs = outs, inps
             torch.cuda.empty_cache() 
 
-        total_sparsity_ratio = check_sparsity(model)
-        print(f"sparsity sanity check {total_sparsity_ratio:.4f}")
+        # total_sparsity_ratio = check_sparsity(model)
+        # print(f"sparsity sanity check {total_sparsity_ratio:.4f}")
         with torch.no_grad():
             loss = eval_ppl_c4(model, c4_testenc, num_val, bs=1, device=device)
-            print(sparsity_params, trial_sparsity, loss)
+            # print(sparsity_params, trial_sparsity, loss)
         if save_log:
-            with open(f'./sparsity_opt_log/{model_name}.txt', 'a') as file:
+            with open(f'./sparsity_opt_log/{model_name}_0.5.txt', 'a') as file:
                 file.write(f"sparsity_dict: {sparsity_params},total_sparsity:{trial_sparsity},loss: {loss}\n")
         # free the space for the next trial
         del model, inps, outs, attention_mask, position_ids
         torch.cuda.empty_cache()
         return loss
     
-    if args.sparsity_allocation is None and prune_n == 0:
-        # delete the previously loaded model
-        del model, tokenizer
-        torch.cuda.empty_cache()
-        
-        # sparsity allocation search begins
-        study = optuna.create_study(direction='minimize')
-        study.optimize(objective, n_trials=n_trials)
-        
-        if save_op_profile:# save the outcome sparsity
-            with open(f'./sparsity_profile/model_{args.model.split("/")[-1]}_ntrials_{n_trials}.json', 'w') as file:
-                json.dump(study.best_params, file)
-        sparsity_params = study.best_params
-        
-        # reload the original model back       
-        model_name = args.model.split("/")[-1]
-        if 'llava' in model_name:
-            model = get_llava(args.model)[0]
-        else:
-            model = get_llm(args.model, args.cache_dir)
-        model.eval()
+    if args.sparsity_allocation is None: # optimized sparsity not provided
+        if prune_n == 0: 
+            # delete the previously loaded model
+            del model, tokenizer
+            torch.cuda.empty_cache()
+            
+            # sparsity allocation search begins
+            study = optuna.create_study(direction='minimize')
+            study.optimize(objective, n_trials=n_trials)
+            
+            if save_op_profile:# save the outcome sparsity
+                with open(f'./sparsity_profile/model_{args.model.split("/")[-1]}_ntrials_{n_trials}_target_0.5.json', 'w') as file:
+                    json.dump(study.best_params, file)
+            sparsity_params = study.best_params
+            
+            # reload the original model back       
+            model_name = args.model.split("/")[-1]
+            if 'llava' in model_name:
+                model = get_llava(args.model)[0]
+            else:
+                model = get_llm(args.model, args.cache_dir)
+            model.eval()
     else:
         # load the optimized sparsity allocation if provided
         with open(args.sparsity_allocation, 'r') as file:
             sparsity_params = json.load(file)
-        # sparsity_params = {'0-self_attn.q_proj': 0.45, '0-self_attn.k_proj': 0.47500000000000003, '0-self_attn.v_proj': 0.45, '0-self_attn.o_proj': 0.525, '0-mlp.gate_proj': 0.55, '0-mlp.down_proj': 0.5, '0-mlp.up_proj': 0.5, '1-self_attn.q_proj': 0.525, '1-self_attn.k_proj': 0.5, '1-self_attn.v_proj': 0.45, '1-self_attn.o_proj': 0.45, '1-mlp.gate_proj': 0.5, '1-mlp.down_proj': 0.45, '1-mlp.up_proj': 0.47500000000000003, '2-self_attn.q_proj': 0.55, '2-self_attn.k_proj': 0.47500000000000003, '2-self_attn.v_proj': 0.55, '2-self_attn.o_proj': 0.5, '2-mlp.gate_proj': 0.47500000000000003, '2-mlp.down_proj': 0.45, '2-mlp.up_proj': 0.47500000000000003, '3-self_attn.q_proj': 0.55, '3-self_attn.k_proj': 0.5, '3-self_attn.v_proj': 0.5, '3-self_attn.o_proj': 0.525, '3-mlp.gate_proj': 0.55, '3-mlp.down_proj': 0.45, '3-mlp.up_proj': 0.5, '4-self_attn.q_proj': 0.55, '4-self_attn.k_proj': 0.525, '4-self_attn.v_proj': 0.45, '4-self_attn.o_proj': 0.55, '4-mlp.gate_proj': 0.525, '4-mlp.down_proj': 0.5, '4-mlp.up_proj': 0.45, '5-self_attn.q_proj': 0.55, '5-self_attn.k_proj': 0.55, '5-self_attn.v_proj': 0.55, '5-self_attn.o_proj': 0.55, '5-mlp.gate_proj': 0.55, '5-mlp.down_proj': 0.47500000000000003, '5-mlp.up_proj': 0.525, '6-self_attn.q_proj': 0.45, '6-self_attn.k_proj': 0.45, '6-self_attn.v_proj': 0.55, '6-self_attn.o_proj': 0.47500000000000003, '6-mlp.gate_proj': 0.5, '6-mlp.down_proj': 0.525, '6-mlp.up_proj': 0.45, '7-self_attn.q_proj': 0.47500000000000003, '7-self_attn.k_proj': 0.5, '7-self_attn.v_proj': 0.55, '7-self_attn.o_proj': 0.5, '7-mlp.gate_proj': 0.45, '7-mlp.down_proj': 0.47500000000000003, '7-mlp.up_proj': 0.45}
-    print(sparsity_params)
     # prune with the optimized sparsity allocation
     with torch.no_grad():
         inps, outs, attention_mask, position_ids = prepare_calibration_input(model, dataloader, device)
-    layers = model.model.layers
+    layers = model.transformer.h if qwen else model.model.layers
     for i in range(len(layers)):
         bin_no = bin_idx[i]
         layer = layers[i]
@@ -448,15 +428,10 @@ def prune_optspa(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=
             sparsity_name = str(bin_no)
             if fine_search:
                 sparsity_name = str(bin_no) + '-' + name
-            sparsity_ratio = round(sparsity_params[sparsity_name], 4)
+            sparsity_ratio = round(sparsity_params[sparsity_name], 4) if prune_n == 0 else 0.5
             # sparsity_ratio = 0.5
             print(f"pruning layer {i} name {name} at sparsity rate {sparsity_ratio}")
-            if metric == 'ria':
-                absolute = torch.abs(subset[name].weight.data)
-                RI = (absolute / torch.sum(absolute, dim=0)) + (absolute / torch.sum(absolute, dim=1, keepdim=True))
-                W_metric = RI * torch.pow(torch.sqrt(wrapped_layers[name].scaler_row.reshape((1,-1))), 0.5)
-                del absolute, RI
-            elif metric == 'wanda':
+            if metric == 'wanda':
                 W_metric = torch.abs(subset[name].weight.data) * torch.sqrt(wrapped_layers[name].scaler_row.reshape((1,-1)))
             else:
                 W_abs = torch.abs(subset[name].weight.data)
@@ -472,37 +447,17 @@ def prune_optspa(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=
                         W_mask.scatter_(1,ii+torch.topk(tmp, prune_n,dim=1, largest=False)[1], True)
             else:
                 sort_res = torch.sort(W_metric, dim=-1, stable=True)
-
-                if args.use_variant:
-                    # wanda variant 
-                    tmp_metric = torch.cumsum(sort_res[0], dim=1)
-                    sum_before = W_metric.sum(dim=1)
-
-                    alpha = 0.4
-                    alpha_hist = [0., 0.8]
-                    W_mask, cur_sparsity = return_given_alpha(alpha, sort_res, W_metric, tmp_metric, sum_before)
-                    while (torch.abs(cur_sparsity - args.sparsity_ratio)>0.001) and (alpha_hist[1]-alpha_hist[0]>=0.001):
-                        if cur_sparsity > args.sparsity_ratio:
-                            alpha_new = (alpha + alpha_hist[0]) / 2.0
-                            alpha_hist[1] = alpha
-                        else:
-                            alpha_new = (alpha + alpha_hist[1]) / 2.0
-                            alpha_hist[0] = alpha
-
-                        alpha = alpha_new 
-                        W_mask, cur_sparsity = return_given_alpha(alpha, sort_res, W_metric, tmp_metric, sum_before)
-                    print(f"alpha found {alpha} sparsity {cur_sparsity:.6f}")
-                else:
-                    # unstructured pruning
-                    indices = sort_res[1][:,:int(W_metric.shape[1]*sparsity_ratio)]
-                    W_mask.scatter_(1, indices, True)
-
+                # unstructured pruning
+                indices = sort_res[1][:,:int(W_metric.shape[1]*sparsity_ratio)]
+                W_mask.scatter_(1, indices, True)
+            
             subset[name].weight.data[W_mask] = 0  ## set weights to zero 
 
         for j in range(args.nsamples):
             with torch.no_grad():
                 outs[j] = layer(inps[j].unsqueeze(0), attention_mask=attention_mask, position_ids=position_ids)[0]
-        inps, outs = outs, inps 
+        inps, outs = outs, inps
+        
     model.config.use_cache = use_cache 
     torch.cuda.empty_cache()
     return model        
@@ -515,7 +470,7 @@ def prune_sparsegpt(args, model, tokenizer, dev, prune_n=0, prune_m=0):
 
     use_cache = model.config.use_cache
     model.config.use_cache = False
-    layers = model.model.layers
+    layers = model.transformer.h if qwen else model.model.layers
 
     if "model.embed_tokens" in model.hf_device_map:
         dev = model.hf_device_map["model.embed_tokens"]
@@ -606,7 +561,7 @@ def prune_ablate(args, model, tokenizer, dev, prune_n=0, prune_m=0):
 
     use_cache = model.config.use_cache
     model.config.use_cache = False
-    layers = model.model.layers
+    layers = model.transformer.h if qwen else model.model.layers
 
     if "model.embed_tokens" in model.hf_device_map:
         dev = model.hf_device_map["model.embed_tokens"]

@@ -2,3 +2,15 @@ method	actual_sparsity	ppl_test
 wanda	0.5000	6.8644
 method	actual_sparsity	ppl_test
 wanda	0.5000	6.8396
+method	actual_sparsity	ppl_test
+wanda	0.5000	7.2598
+method	actual_sparsity	ppl_test
+wanda	0.5000	6.4629
+method	actual_sparsity	ppl_test
+wanda	0.5000	11.5296
+method	actual_sparsity	ppl_test
+wanda	0.5000	8.5660
+method	actual_sparsity	ppl_test
+wanda	0.5000	14.5862
+method	actual_sparsity	ppl_test
+wanda	0.5000	10.5963

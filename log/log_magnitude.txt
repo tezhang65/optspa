@@ -2,3 +2,7 @@ method	actual_sparsity	ppl_test
 magnitude	0.5010	7.6517
 method	actual_sparsity	ppl_test
 magnitude	0.5010	7.6595
+method	actual_sparsity	ppl_test
+magnitude	0.5000	17.2877
+method	actual_sparsity	ppl_test
+magnitude	0.5010	14.8961

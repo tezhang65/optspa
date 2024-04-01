@@ -1,2 +1,14 @@
 method	actual_sparsity	ppl_test
 sparsegpt	0.5000	8.1455
+method	actual_sparsity	ppl_test
+sparsegpt	0.5000	7.1731
+method	actual_sparsity	ppl_test
+sparsegpt	0.5000	6.5134
+method	actual_sparsity	ppl_test
+sparsegpt	0.5000	10.7135
+method	actual_sparsity	ppl_test
+sparsegpt	0.5000	8.6441
+method	actual_sparsity	ppl_test
+sparsegpt	0.5000	12.8900
+method	actual_sparsity	ppl_test
+sparsegpt	0.5000	9.8525

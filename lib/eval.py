@@ -86,6 +86,7 @@ def eval_ppl_wikitext(model, testenc, bs=1, device=None):
 
     # Calculate number of samples
     nsamples = testenc.numel() // model.seqlen
+    print(model.seqlen)
 
     # List to store negative log likelihoods
     nlls = []

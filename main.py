@@ -20,9 +20,9 @@ def get_llm(model_name, cache_dir="llm_weights"):
         torch_dtype=torch.float16, 
         cache_dir=cache_dir, 
         low_cpu_mem_usage=True, 
-        device_map="auto"
+        device_map="auto",
+        trust_remote_code=True, 
     )
-
     model.seqlen = model.config.max_position_embeddings 
     return model
 
@@ -58,11 +58,9 @@ def main():
     print(f"loading llm model {args.model}")
     if 'llava' in model_name:
         model, tokenizer = get_llava(args.model)
-    elif 'qwen' in model_name:
-        pass 
     else:
         model = get_llm(args.model, args.cache_dir)
-        tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=False)
+        tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=False, trust_remote_code=True)
     model.eval()
     device = torch.device("cuda:0")
     if "30b" in args.model or "65b" in args.model: # for 30b and 65b we use device_map to load onto multiple A6000 GPUs, thus the processing here.
