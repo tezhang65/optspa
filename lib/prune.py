@@ -242,7 +242,7 @@ def prune_wanda(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0
     return model
 
 
-def prune_optspa(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, prune_m=0, num_block=8, fine_search=True, n_trials=100, metric='lognorm', num_val=64, save_op_profile=True, save_log=True):
+def prune_optspa(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, prune_m=0, num_block=8, fine_search=True, n_trials=200, metric='lognorm', num_val=64, save_op_profile=True, save_log=True):
     use_cache = model.config.use_cache 
     model.config.use_cache = False 
     print("loading calibdation data")
