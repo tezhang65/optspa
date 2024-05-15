@@ -6,8 +6,9 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 from importlib.metadata import version
 
 from lib.prune import prune_wanda, prune_magnitude, prune_sparsegpt, prune_ablate, check_sparsity, find_layers, prune_optspa
-from lib.eval import eval_ppl, eval_zero_shot
+from lib.eval import eval_ppl, eval_zero_shot, eval_ppl_ptb
 from lib.tool import *
+from lib.data import *
 
 print('torch', version('torch'))
 print('transformers', version('transformers'))
@@ -91,9 +92,15 @@ def main():
     if args.save_model:
         model.save_pretrained(args.save_model)
         tokenizer.save_pretrained(args.save_model)
-        
+    
+    # Evaluate on wikitext2 
     ppl_test = eval_ppl(args, model, tokenizer, device)
     print(f"wikitext perplexity {ppl_test}")
+    
+    # Evaluate on ptb
+    # ppl_test_enc = get_ptb(args.nsamples, args.seed, model.seqlen, tokenizer)
+    # ppl_test_ptb = eval_ppl_ptb(model, ppl_test_enc)
+    # print(f"ptb perplexity {ppl_test_ptb}")
 
     if not os.path.exists(args.save):
         os.makedirs(args.save)

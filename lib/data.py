@@ -74,3 +74,22 @@ def get_loaders(name, nsamples=128, seed=0, seqlen=2048, tokenizer=None):
         return get_wikitext2(nsamples, seed, seqlen, tokenizer)
     if "c4" in name:
         return get_c4(nsamples, seed, seqlen, tokenizer)
+
+def get_ptb(nsamples, seed, seqlen, tokenizer):
+    traindata = load_dataset('ptb_text_only', 'penn_treebank', split='train')
+    testdata = load_dataset('ptb_text_only', 'penn_treebank', split='test')
+    # tokenizer = AutoTokenizer.from_pretrained(model, use_fast=False)
+
+    trainenc = tokenizer(" ".join(traindata['sentence']), return_tensors='pt')
+    testenc = tokenizer("\n\n".join(testdata['sentence']), return_tensors='pt')
+
+    random.seed(seed)
+    trainloader = []
+    for _ in range(nsamples):
+        i = random.randint(0, trainenc.input_ids.shape[1] - seqlen - 1)
+        j = i + seqlen
+        inp = trainenc.input_ids[:, i:j]
+        tar = inp.clone()
+        tar[:, :-1] = -100
+        trainloader.append((inp, tar))
+    return testenc
