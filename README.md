@@ -10,8 +10,8 @@
 
 ## Key Features
 ✨ **Adaptive Sparsity Optimization**  
-- Dynamic sparsity pattern selection 
-- Layer-wise sparsity for optimal pruning
+- Dynamic sparsity and bandwidth pattern selection 
+- Layer-wise sparsity for optimal unstructured pruning, saving sparsity ratio profiles for future use
 - Compatible with multimodal models like LLaVA 1.5 and 1.6
 
 🛠 **Work in Progress**  
@@ -19,7 +19,7 @@
 
 ## Installation
 ```bash
-git clone https://github.com/yourusername/optspa.git
+git clone https://github.com/tezhang65/optspa.git
 cd optspa
 ```
 Please follow the INSTALL.md and the install instructions of LLava
@@ -40,4 +40,6 @@ This project is built upon:
 - [LLaVA: Large Language and Vision Assistant](https://github.com/haotian-liu/LLaVA)
 We thank the authors for their excellent work!
 
+## License
+This project is released under the [MIT License](LICENSE).
 
