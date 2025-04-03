@@ -286,7 +286,7 @@ def prune_optspa(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=
         else:
             trial_sparsity = mean([sparsity_params[str(i)] for i in bin_idx]) 
         # prune out unneccessay trials
-        if trial_sparsity < args.sparsity_ratio:
+        if trial_sparsity < args.sparsity_ratio - 0.005:
             raise optuna.TrialPruned()
         
         # reload the model
