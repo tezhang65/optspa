@@ -20,7 +20,12 @@
 ```bash
 git clone https://github.com/yourusername/optspa.git
 cd optspa
-pip install -r requirements.txt
+```
+Please follow the INSTALL.md and the install instructions of LLava
+
+## Usage
+
+
 
 
 
