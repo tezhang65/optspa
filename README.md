@@ -38,6 +38,7 @@ python main.py \
 This project is built upon:
 - [Wanda: Pruning by Weights and Activations](https://github.com/locuslab/wanda)
 - [LLaVA: Large Language and Vision Assistant](https://github.com/haotian-liu/LLaVA)
+
 We thank the authors for their excellent work!
 
 ## License
