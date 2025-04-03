@@ -248,9 +248,9 @@ def prune_optspa(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=
     dataloader, c4_testenc = get_loaders("c4",nsamples=args.nsamples,seed=args.seed,seqlen=model.seqlen,tokenizer=tokenizer)
     print("dataset loading complete")
     num_layer = len(model.transformer.h) if qwen else len(model.model.layers)
-    bin_idx = assign_bin_to_layer(num_layer, num_block)
+    bin_idx = assign_bin_to_layer(num_layer, num_block)  # the sparsity ratio is shared in all transformer layers in each block
     
-    if fine_search:
+    if fine_search:  # use differnt sparsity ratios for Q,K,V,up,down,gate in each transformer layer
         params_count = find_layers(model.transformer.h[0] if qwen else model.model.layers[0])
         total_params = 0
         for name in params_count:
@@ -334,7 +334,7 @@ def prune_optspa(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=
                 print(f"pruning layer {i} name {name} at sparsity rate {sparsity_ratio}")
                 if metric =='wanda':
                     W_metric = torch.abs(subset[name].weight.data) * torch.sqrt(wrapped_layers[name].scaler_row.reshape((1,-1)))
-                else: # use the new pruning metrics
+                else: # use the new pruning metrics lognorm
                     W_abs = torch.abs(subset[name].weight.data)
                     log_norm = torch.log1p(weighted_sum_ratio(W_abs))
                     W_metric = log_norm * torch.pow(wrapped_layers[name].scaler_row.reshape((1,-1)), 0.25)
