@@ -12,9 +12,10 @@
 ✨ **Adaptive Sparsity Optimization**  
 - Dynamic sparsity pattern selection 
 - Layer-wise sparsity for optimal pruning
-- KV Cache bandwidth selection
+- Compatible with multimodal models like LLaVA 1.5 and 1.6
 
 🛠 **Work in Progress**  
+- Compatiable with Qwen-VL in development
 
 ## Installation
 ```bash
@@ -26,20 +27,17 @@ Please follow the INSTALL.md and the install instructions of LLava
 ## Usage
 ```sh
 python main.py \
-    --model decapoda-research/llama-7b-hf \
-    --prune_method prune_optspa \
+    --model decapoda-research/llama-7b-hf \  
+    --prune_method optspa \
     --sparsity_ratio 0.5 \
     --sparsity_type unstructured \
     --save out/llama_7b/unstructured/wanda/ 
 ```
 
-Acknowledgements
-
+## Acknowledgements
 This project is built upon:
-
-Wanda: Pruning by Weights and Activations
-LLaVA: Large Language and Vision Assistant
+- [Wanda: Pruning by Weights and Activations](https://github.com/locuslab/wanda)
+- [LLaVA: Large Language and Vision Assistant](https://github.com/haotian-liu/LLaVA)
 We thank the authors for their excellent work!
-
 
 
