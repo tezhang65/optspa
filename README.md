@@ -22,7 +22,7 @@
 git clone https://github.com/tezhang65/optspa.git
 cd optspa
 ```
-Please follow the INSTALL.md and the install instructions of LLava
+Please follow the INSTALL.md and the install instructions of LLaVA
 
 ## Usage
 ```sh
