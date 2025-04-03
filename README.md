@@ -10,9 +10,9 @@
 
 ## Key Features
 ✨ **Adaptive Sparsity Optimization**  
-- Dynamic sparsity and bandwidth pattern selection 
+- Dynamic sparsity and bandwidth pattern selection based on differnet depth of layers
 - Layer-wise sparsity for optimal unstructured pruning, saving sparsity ratio profiles for future use
-- Compatible with multimodal models like LLaVA 1.5 and 1.6
+- Compatible with both multimodal models like LLaVA 1.5 and 1.6 and single modal LLaMA
 
 🛠 **Work in Progress**  
 - Compatiable with Qwen-VL in development
@@ -22,16 +22,18 @@
 git clone https://github.com/tezhang65/optspa.git
 cd optspa
 ```
-Please follow the INSTALL.md and the install instructions of LLaVA
+Please follow the INSTALL.md and the installation instructions of LLaVA. 
+Install all the required packages under a same environment.
+
 
 ## Usage
 ```sh
 python main.py \
-    --model decapoda-research/llama-7b-hf \  
+    --model liuhaotian/llava-v1.5-7b \  
     --prune_method optspa \
     --sparsity_ratio 0.5 \
     --sparsity_type unstructured \
-    --save out/llama_7b/unstructured/wanda/ 
+    --save out/llava_7b/unstructured/wanda/ 
 ```
 
 ## Acknowledgements
