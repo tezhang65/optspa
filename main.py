@@ -96,11 +96,6 @@ def main():
     # Evaluate on wikitext2 
     ppl_test = eval_ppl(args, model, tokenizer, device)
     print(f"wikitext perplexity {ppl_test}")
-    
-    # Evaluate on ptb
-    # ppl_test_enc = get_ptb(args.nsamples, args.seed, model.seqlen, tokenizer)
-    # ppl_test_ptb = eval_ppl_ptb(model, ppl_test_enc)
-    # print(f"ptb perplexity {ppl_test_ptb}")
 
     if not os.path.exists(args.save):
         os.makedirs(args.save)
