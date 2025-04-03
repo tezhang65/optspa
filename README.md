@@ -10,7 +10,7 @@
 
 ## Key Features
 ✨ **Adaptive Sparsity Optimization**  
-- Dynamic sparsity and bandwidth pattern selection based on differnet depth of layers
+- Dynamic sparsity pattern selection based on differnet depth of layers
 - Layer-wise sparsity for optimal unstructured pruning, saving sparsity ratio profiles for future use
 - Compatible with both multimodal models like LLaVA 1.5 and 1.6 and single modal LLaMA
 
