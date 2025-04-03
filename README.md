@@ -24,8 +24,22 @@ cd optspa
 Please follow the INSTALL.md and the install instructions of LLava
 
 ## Usage
+```sh
+python main.py \
+    --model decapoda-research/llama-7b-hf \
+    --prune_method prune_optspa \
+    --sparsity_ratio 0.5 \
+    --sparsity_type unstructured \
+    --save out/llama_7b/unstructured/wanda/ 
+```
 
+Acknowledgements
 
+This project is built upon:
+
+Wanda: Pruning by Weights and Activations
+LLaVA: Large Language and Vision Assistant
+We thank the authors for their excellent work!
 
 
 
