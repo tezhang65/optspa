@@ -2,32 +2,19 @@
 
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-<p align="center">
-  <img src="https://via.placeholder.com/600x200?text=Optspa+Architecture" alt="Method Overview">
-</p>
-
 ## Introduction
-**Optspa** is an adaptive search algorithm that optimizes sparsity patterns and KV cache compression to enhance the efficiency of Large Multimodal Models (LMMs). Our method dynamically adapts to different input modalities and model architectures, achieving significant memory reduction while maintaining model performance.
+**Optspa** is an adaptive search algorithm that optimizes sparsity patterns and KV cache compression to enhance the efficiency of Large Multimodal Models (LMMs). Utilizing the Tree-structured Parzen Estimator, our method dynamically adjusts pruning ratios and KV cache quantization bandwidth across different LMM layers, using model performance as the optimization objective. This approach uniquely combines pruning with key-value cache quantization and incorporates a fast pruning technique that eliminates the need for additional fine-tuning or weight adjustments, achieving efficient compression without compromising accuracy.
 
-📄 **Paper**: [Enhancing Large Multimodal Models with Adaptive Sparsity and KV Cache Compression](https://arxiv.org/abs/XXXX.XXXXX)  
+📄 **Paper**: [Enhancing Large Multimodal Models with Adaptive Sparsity and KV Cache Compression] 
 📅 **Proceedings of IEEE International Conference on Multimedia Expo (ICME) 2025**
 
 ## Key Features
 ✨ **Adaptive Sparsity Optimization**  
-- Dynamic sparsity pattern selection based on input characteristics
-- Layer-wise importance scoring for optimal pruning
-
-🚀 **KV Cache Compression**  
-- Context-aware cache compression
-- Hybrid dense-sparse representation
-
-🔌 **Integration Friendly**  
-- Compatible with popular transformer architectures
-- Minimal modification required for existing implementations
+- Dynamic sparsity pattern selection 
+- Layer-wise sparsity for optimal pruning
+- KV Cache bandwidth selection
 
 🛠 **Work in Progress**  
-- Multi-modal attention sparsity coordination
-- Hardware-aware compression strategies
 
 ## Installation
 ```bash
