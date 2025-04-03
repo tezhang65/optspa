@@ -377,7 +377,7 @@ def prune_optspa(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=
             study = optuna.create_study(direction='minimize')
             study.optimize(objective, n_trials=n_trials)
             
-            if save_op_profile:# save the outcome sparsity
+            if save_op_profile:# save the best outcome sparsity profile
                 os.makedirs('./sparsity_profile', exist_ok=True)
                 with open(f'./sparsity_profile/model_{args.model.split("/")[-1]}_ntrials_{n_trials}.json', 'w') as file:
                     json.dump(study.best_params, file)
