@@ -241,7 +241,7 @@ def prune_wanda(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0
     return model
 
 
-def prune_optspa(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, prune_m=0, num_block=8, fine_search=True, n_trials=100, metric='lognorm', num_val=64, save_op_profile=True, save_log=True):
+def prune_optspa(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, prune_m=0, num_block=8, fine_search=False, n_trials=50, metric='lognorm', num_val=64, save_op_profile=False, save_log=False):
     use_cache = model.config.use_cache 
     model.config.use_cache = False 
     print("loading calibdation data")
@@ -286,7 +286,7 @@ def prune_optspa(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=
         else:
             trial_sparsity = mean([sparsity_params[str(i)] for i in bin_idx]) 
         # prune out unneccessay trials
-        if trial_sparsity < args.sparsity_ratio-0.0049:
+        if trial_sparsity < args.sparsity_ratio:
             raise optuna.TrialPruned()
         
         # reload the model
@@ -334,7 +334,7 @@ def prune_optspa(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=
                 print(f"pruning layer {i} name {name} at sparsity rate {sparsity_ratio}")
                 if metric =='wanda':
                     W_metric = torch.abs(subset[name].weight.data) * torch.sqrt(wrapped_layers[name].scaler_row.reshape((1,-1)))
-                else:
+                else: # use the new pruning metrics
                     W_abs = torch.abs(subset[name].weight.data)
                     log_norm = torch.log1p(weighted_sum_ratio(W_abs))
                     W_metric = log_norm * torch.pow(wrapped_layers[name].scaler_row.reshape((1,-1)), 0.25)
@@ -359,7 +359,7 @@ def prune_optspa(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=
             loss = eval_ppl_c4(model, c4_testenc, num_val, bs=1, device=device)
             # print(sparsity_params, trial_sparsity, loss)
         if save_log:
-            with open(f'./sparsity_opt_log/{model_name}_n100.txt', 'a') as file:
+            with open(f'./sparsity_opt_log/{model_name}.txt', 'a') as file:
                 file.write(f"sparsity_dict: {sparsity_params},total_sparsity:{trial_sparsity},loss: {loss}\n")
         # free the space for the next trial
         del model, inps, outs, attention_mask, position_ids
@@ -377,7 +377,7 @@ def prune_optspa(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=
             study.optimize(objective, n_trials=n_trials)
             
             if save_op_profile:# save the outcome sparsity
-                with open(f'./sparsity_profile/model_{args.model.split("/")[-1]}_ntrials_{n_trials}_target_0.495.json', 'w') as file:
+                with open(f'./sparsity_profile/model_{args.model.split("/")[-1]}_ntrials_{n_trials}.json', 'w') as file:
                     json.dump(study.best_params, file)
             sparsity_params = study.best_params
             
