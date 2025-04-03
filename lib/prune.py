@@ -133,10 +133,6 @@ def weighted_sum_ratio(W):
     col_norms = torch.sqrt((W**2).sum(dim=0, keepdim=True))
     return W / row_norms + W / col_norms
 
-# def weighted_sum_ratio(W):
-#     row_maxs, _ = torch.max(torch.abs(W), dim=1, keepdim=True)
-#     return W / row_maxs #+ W / col_maxs
-
 def prune_magnitude(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, prune_m=0):
     layers = model.transformer.h if qwen else model.model.layers
 
@@ -198,11 +194,11 @@ def prune_wanda(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0
 
         for name in subset:
             print(f"pruning layer {i} name {name}")
-            # W_metric = torch.abs(subset[name].weight.data) * torch.sqrt(wrapped_layers[name].scaler_row.reshape((1,-1)))
-            W_abs = torch.abs(subset[name].weight.data)
-            log_norm = torch.log1p(weighted_sum_ratio(W_abs))
-            W_metric = log_norm * torch.pow(wrapped_layers[name].scaler_row.reshape((1,-1)), 0.25)
-            del W_abs, log_norm
+            W_metric = torch.abs(subset[name].weight.data) * torch.sqrt(wrapped_layers[name].scaler_row.reshape((1,-1)))
+            # W_abs = torch.abs(subset[name].weight.data)
+            # log_norm = torch.log1p(weighted_sum_ratio(W_abs))
+            # W_metric = log_norm * torch.pow(wrapped_layers[name].scaler_row.reshape((1,-1)), 0.25)
+            # del W_abs, log_norm
             W_mask = (torch.zeros_like(W_metric) == 1)  ## initialize a mask to be all False
             if prune_n != 0:
                 # structured n:m sparsity
