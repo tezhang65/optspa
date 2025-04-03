@@ -3,7 +3,7 @@
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 ## Introduction
-**Optspa** is an adaptive search algorithm that optimizes sparsity patterns and KV cache compression to enhance the efficiency of Large Multimodal Models (LMMs). Utilizing the Tree-structured Parzen Estimator, our method dynamically adjusts pruning ratios and KV cache quantization bandwidth across different LMM layers, using model performance as the optimization objective. This approach uniquely combines pruning with key-value cache quantization and incorporates a fast pruning technique that eliminates the need for additional fine-tuning or weight adjustments, achieving efficient compression without compromising accuracy.
+**Optspa** is an adaptive search algorithm that optimizes sparsity patterns to enhance the efficiency of Large Multimodal Models (LMMs). Utilizing the Tree-structured Parzen Estimator, our method dynamically adjusts pruning ratios across different LMM layers, using model performance as the optimization objective. This approach uniquely incorporates a fast pruning technique that eliminates the need for additional fine-tuning or weight adjustments, achieving efficient compression without compromising much accuracy.
 
 📄 **Paper**: [Enhancing Large Multimodal Models with Adaptive Sparsity and KV Cache Compression] 
 📅 **Proceedings of IEEE International Conference on Multimedia Expo (ICME) 2025**
