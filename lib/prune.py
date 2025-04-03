@@ -241,7 +241,7 @@ def prune_wanda(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0
     return model
 
 
-def prune_optspa(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, prune_m=0, num_block=8, fine_search=False, n_trials=50, metric='lognorm', num_val=64, save_op_profile=False, save_log=False):
+def prune_optspa(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, prune_m=0, num_block=8, fine_search=False, n_trials=50, metric='lognorm', num_val=64, save_op_profile=True, save_log=True):
     use_cache = model.config.use_cache 
     model.config.use_cache = False 
     print("loading calibdation data")
@@ -359,6 +359,7 @@ def prune_optspa(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=
             loss = eval_ppl_c4(model, c4_testenc, num_val, bs=1, device=device)
             # print(sparsity_params, trial_sparsity, loss)
         if save_log:
+            os.makedirs('./sparsity_opt_log/', exist_ok=True)
             with open(f'./sparsity_opt_log/{model_name}.txt', 'a') as file:
                 file.write(f"sparsity_dict: {sparsity_params},total_sparsity:{trial_sparsity},loss: {loss}\n")
         # free the space for the next trial
@@ -377,6 +378,7 @@ def prune_optspa(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=
             study.optimize(objective, n_trials=n_trials)
             
             if save_op_profile:# save the outcome sparsity
+                os.makedirs('./sparsity_profile', exist_ok=True)
                 with open(f'./sparsity_profile/model_{args.model.split("/")[-1]}_ntrials_{n_trials}.json', 'w') as file:
                     json.dump(study.best_params, file)
             sparsity_params = study.best_params
